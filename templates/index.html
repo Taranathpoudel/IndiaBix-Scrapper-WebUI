@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IndiaBix Scraper Panel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob top-blob"></div>
+        <div class="blob bottom-blob"></div>
+    </div>
+    
+    <div class="container">
+        <header>
+            <div class="logo-icon">✨</div>
+            <h1>IndiaBix Scraper</h1>
+            <p>A fast, autonomous way to extract learning materials directly to CSV.</p>
+        </header>
+
+        <main class="glass-panel">
+            <form id="scrape-form">
+                <div class="input-group">
+                    <label for="base-url">Base URL</label>
+                    <input type="url" id="base-url" placeholder="https://www.indiabix.com/civil-engineering/building-materials/" required>
+                </div>
+
+                <div class="mode-selector">
+                    <label class="radio-card">
+                        <input type="radio" name="mode" value="auto" checked>
+                        <div class="card-content">
+                            <h3>Auto-Crawl</h3>
+                            <p>Scrape multiple sections & pages sequentially</p>
+                        </div>
+                    </label>
+                    <label class="radio-card">
+                        <input type="radio" name="mode" value="manual">
+                        <div class="card-content">
+                            <h3>Manual Pages</h3>
+                            <p>Scrape specific page code inputs</p>
+                        </div>
+                    </label>
+                    <label class="radio-card">
+                        <input type="radio" name="mode" value="single">
+                        <div class="card-content">
+                            <h3>Single URL</h3>
+                            <p>Only scrape the exact URL provided</p>
+                        </div>
+                    </label>
+                </div>
+
+                <div id="dynamic-inputs">
+                    <!-- Dynamic inputs injected here via JS -->
+                </div>
+
+                <button type="submit" id="submit-btn">
+                    <span class="btn-text">Start Scraping</span>
+                    <div class="loader" style="display: none;"></div>
+                </button>
+            </form>
+        </main>
+    </div>
+
+    <!-- Error/Success Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script>
+        const form = document.getElementById('scrape-form');
+        const dynamicInputs = document.getElementById('dynamic-inputs');
+        const submitBtn = document.getElementById('submit-btn');
+        const btnText = document.querySelector('.btn-text');
+        const loader = document.querySelector('.loader');
+        const radios = document.querySelectorAll('input[name="mode"]');
+        const toast = document.getElementById('toast');
+
+        // Initial render
+        renderDynamicInputs();
+
+        // Listen for mode changes
+        radios.forEach(radio => {
+            radio.addEventListener('change', renderDynamicInputs);
+        });
+
+        function renderDynamicInputs() {
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            dynamicInputs.style.opacity = 0;
+            
+            setTimeout(() => {
+                if (mode === 'auto') {
+                    dynamicInputs.innerHTML = `
+                        <div class="input-row">
+                            <div class="input-group">
+                                <label for="sections">Number of Sections</label>
+                                <input type="number" id="sections" min="1" value="2" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="pages">Pages per Section</label>
+                                <input type="number" id="pages" min="1" value="10" required>
+                            </div>
+                        </div>
+                    `;
+                } else if (mode === 'manual') {
+                    dynamicInputs.innerHTML = `
+                        <div class="input-group">
+                            <label for="specific_pages">Specific Child Codes (Space separated)</label>
+                            <input type="text" id="specific_pages" placeholder="001001 001002 001003" required>
+                        </div>
+                    `;
+                } else {
+                    dynamicInputs.innerHTML = '';
+                }
+                dynamicInputs.style.opacity = 1;
+            }, 150);
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Set Loading state
+            btnText.style.display = 'none';
+            loader.style.display = 'block';
+            submitBtn.disabled = true;
+
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            const payload = {
+                base_url: document.getElementById('base-url').value,
+                mode: mode
+            };
+
+            if (mode === 'auto') {
+                payload.sections = document.getElementById('sections').value;
+                payload.pages = document.getElementById('pages').value;
+            } else if (mode === 'manual') {
+                const spInput = document.getElementById('specific_pages').value;
+                payload.specific_pages = spInput.split(' ').filter(val => val.trim() !== '');
+            }
+
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    // Trigger download
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = downloadUrl;
+                    link.download = 'india-bix-scraped.csv';
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    
+                    showToast('Scraping complete! File downloaded.', 'success');
+                } else {
+                    const errStr = await response.text();
+                    showToast('Error: ' + errStr, 'error');
+                }
+            } catch (error) {
+                showToast('Failed to connect to server.', 'error');
+            } finally {
+                // Restore state
+                btnText.style.display = 'block';
+                loader.style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        });
+
+        function showToast(message, type) {
+            toast.textContent = message;
+            toast.className = `toast show ${type}`;
+            setTimeout(() => {
+                toast.className = 'toast hidden';
+            }, 4000);
+        }
+    </script>
+</body>
+</html>
